@@ -15,7 +15,7 @@ const app = express();
 
 // Configure CORS
 const corsOptions = {
-  origin: ["https://chatddk-frontend.vercel.app"], // Add your frontend URL here
+  origin: ["https://chatddk-frontend.onrender.com"], // Add your frontend URL here
   methods: ["GET", "POST"], // HTTP methods your app supports
 };
 app.use(cors(corsOptions)); // Enable CORS with options
