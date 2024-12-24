@@ -12,7 +12,14 @@ dotenv.config();
 
 // Initialize Express
 const app = express();
-app.use(cors());
+
+// Configure CORS
+const corsOptions = {
+  origin: ["https://chatddk-frontend.vercel.app"], // Add your frontend URL here
+  methods: ["GET", "POST"], // HTTP methods your app supports
+};
+app.use(cors(corsOptions)); // Enable CORS with options
+
 app.use(bodyParser.json());
 
 // Get the directory for .txt files from the environment variable
@@ -107,7 +114,6 @@ app.post("/reset", (req, res) => {
   console.log("Conversation history cleared.");
   res.json({ message: "Conversation reset successfully." });
 });
-
 
 // Start the server
 const PORT = process.env.PORT || 5000;
