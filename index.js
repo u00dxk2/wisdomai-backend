@@ -1,11 +1,12 @@
-import express from "express"; // Import Express
-import cors from "cors"; // Import CORS for handling cross-origin requests
-import bodyParser from "body-parser"; // Import body-parser for JSON handling
-import OpenAI from "openai"; // Import OpenAI API library
-import dotenv from "dotenv"; // Import dotenv for environment variables
-import { loadTextFiles } from "./loadTextFiles.js"; // Import the function to load .txt files
-import fs from "fs"; // To load embeddings from JSON
-import { cosineSimilarity } from "./utils.js"; // Utility function for cosine similarity
+import express from "express";
+import cors from "cors";
+import bodyParser from "body-parser";
+import OpenAI from "openai";
+import dotenv from "dotenv";
+import { loadTextFiles } from "./loadTextFiles.js";
+import fs from "fs";
+import { cosineSimilarity } from "./utils.js";
+import rateLimit from "express-rate-limit";
 
 // Load environment variables
 dotenv.config();
@@ -14,28 +15,30 @@ dotenv.config();
 const app = express();
 
 // Configure CORS
-app.use(cors()); // allow all origins temporarily for testing
+app.use(cors()); // Temporary open CORS for testing
 app.use(express.json());
-
-//const corsOptions = {
-//  origin: [
-//    "https://chatddk-frontend.onrender.com",
-//    "https://www.davidkooi.com",
-//    "https://davidkooi.com"
-//  ], // Add your frontend URL here
-//  methods: ["GET", "POST"], // HTTP methods your app supports
-//};
-// app.use(cors(corsOptions)); // Enable CORS with options
-
 app.use(bodyParser.json());
 
-// Get the directory for .txt files from the environment variable
-const knowledgeDir = process.env.KNOWLEDGE_DIR || "./knowledge";
+// Rate-limiting middleware to prevent abuse and unexpected costs
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 30, // Limit each IP to 30 requests per window
+  handler: (req, res) => {
+    res.status(429).json({
+      message: "Slow down, wise seeker! 🧘‍♂️ You've reached your limit—pause, reflect, and return soon.",
+    });
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
-// Store the conversation history for all interactions
+// Apply rate-limiter specifically to the /chat route
+app.use('/chat', limiter);
+
+// Knowledge base setup
+const knowledgeDir = process.env.KNOWLEDGE_DIR || "./knowledge";
 const conversationHistory = [];
 
-// Load knowledge base
 let knowledgeBase = [];
 try {
   knowledgeBase = loadTextFiles(knowledgeDir);
@@ -44,7 +47,7 @@ try {
   console.error("Error loading knowledge base:", error.message);
 }
 
-// Load embeddings from JSON at server startup
+// Load embeddings from JSON
 const embeddingsFilePath = "./knowledgeEmbeddings.json";
 let knowledgeEmbeddings = [];
 
@@ -55,7 +58,7 @@ try {
   console.error("Error loading embeddings:", error.message);
 }
 
-// Function to find relevant files based on query
+// Relevant files finder
 const findRelevantFiles = async (query, openai) => {
   const queryEmbeddingResponse = await openai.embeddings.create({
     model: "text-embedding-ada-002",
@@ -73,79 +76,75 @@ const findRelevantFiles = async (query, openai) => {
   return similarities.slice(0, 3);
 };
 
-// Initialize OpenAI with API key
+// OpenAI Initialization
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// Chat endpoint with dynamic WisdomAI personas
-app.post("/chat", async (req, res) => {
+// Updated Chat endpoint with streaming (Server-Sent Events)
+app.get("/chat-stream", async (req, res) => {
   try {
-    const { message, wisdomFigure } = req.body;
+    const { message, wisdomFigure } = req.query;
 
     if (!message || typeof message !== "string") {
-      return res.status(400).json({ error: "Invalid or missing 'message' in request body." });
+      return res.status(400).json({ error: "Invalid or missing 'message' in request query." });
     }
 
-    // Find relevant files from your existing embeddings logic
     const relevantFiles = await findRelevantFiles(message, openai);
     const context = relevantFiles.map((file) => file.content).join("\n");
 
-    // Define dynamic system prompts per wisdom figure
     const personaPrompts = {
-      Buddha: `You are Buddha. Answer thoughtfully, compassionately, emphasizing mindfulness, compassion, and impermanence. Use this context:\n${context}`,
-      
-      Jesus: `You are Jesus. Answer wisely, kindly, and compassionately, offering spiritual and moral guidance. Speak in parables if helpful. Context:\n${context}`,
-      
-      Epictetus: `You are Epictetus, the Stoic philosopher. Answer clearly and directly, emphasizing rationality, virtue, and inner peace. Context:\n${context}`,
-      
+      Buddha: `You are Buddha. Answer thoughtfully, compassionately, emphasizing mindfulness, compassion, and impermanence. Context:\n${context}`,
+      Jesus: `You are Jesus. Answer wisely, kindly, compassionately, offering spiritual and moral guidance. Context:\n${context}`,
+      Epictetus: `You are Epictetus. Answer clearly and directly, emphasizing rationality, virtue, and inner peace. Context:\n${context}`,
       Vonnegut: `You are Kurt Vonnegut. Answer with dry humor, irony, wit, and a slightly satirical viewpoint. Context:\n${context}`,
-      
-      Laozi: `You are Laozi, the Daoist sage. Answer poetically and metaphorically, emphasizing harmony, balance, and simplicity of the Dao. Context:\n${context}`,
-      
+      Laozi: `You are Laozi. Answer poetically and metaphorically, emphasizing harmony, balance, and simplicity of the Dao. Context:\n${context}`,
       Rumi: `You are Rumi. Answer with poetic wisdom, passion, and deep spiritual insight. Context:\n${context}`,
-      
-      Sagan: `You are Carl Sagan. Answer scientifically, insightfully, with a sense of wonder and clarity. Context:\n${context}`,
-      
-      Twain: `You are Mark Twain. Answer humorously, cleverly, with a sharp wit and skeptical eye. Context:\n${context}`,
-
-      Kooi: `You are David Kooi. Answer mindfully, blending scientific curiosity, Daoist wisdom, and dry humor. Emphasize compassion, authenticity, and harmony with nature, while gently poking fun at life's absurdities. Context:\n${context}`
-
+      Sagan: `You are Carl Sagan. Answer scientifically, insightfully, with wonder and clarity. Context:\n${context}`,
+      Twain: `You are Mark Twain. Answer humorously, cleverly, with sharp wit and skepticism. Context:\n${context}`,
+      Kooi: `You are David Kooi. Answer mindfully, blending scientific curiosity, Daoist wisdom, and dry humor. Context:\n${context}`,
     };
 
-    // Set default if none selected or unknown persona
-    const systemMessage = personaPrompts[wisdomFigure] || `You are a wise assistant. Answer thoughtfully using this context:\n${context}`;
+    const systemMessage = personaPrompts[wisdomFigure] || `You are a wise assistant. Answer thoughtfully. Context:\n${context}`;
 
-    // Keep the conversation history logic (if desired)
     conversationHistory.push({ role: "user", content: message });
 
-    const response = await openai.chat.completions.create({
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
+    const stream = await openai.chat.completions.create({
       model: "gpt-4o",
-      messages: [
-        { role: "system", content: systemMessage },
-        ...conversationHistory,
-      ],
+      messages: [{ role: "system", content: systemMessage }, ...conversationHistory],
+      stream: true,
     });
 
-    const botReply = response.choices[0].message.content;
-    conversationHistory.push({ role: "assistant", content: botReply });
+    let fullReply = '';
 
-    res.json({ reply: botReply });
+    for await (const chunk of stream) {
+      const chunkText = chunk.choices[0]?.delta?.content || '';
+      fullReply += chunkText;
+      res.write(`data: ${JSON.stringify({ content: chunkText })}\n\n`);
+    }
+
+    conversationHistory.push({ role: "assistant", content: fullReply });
+
+    res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+    res.end();
 
   } catch (error) {
-    console.error("Error in /chat endpoint:", error.message);
+    console.error("Streaming error:", error);
     res.status(500).send("Error communicating with OpenAI API.");
   }
 });
 
-
-// Endpoint to clear the conversation history
+// Endpoint to reset conversation
 app.post("/reset", (req, res) => {
-  conversationHistory.length = 0; // Clear the array by setting its length to 0
+  conversationHistory.length = 0;
   console.log("Conversation history cleared.");
   res.json({ message: "Conversation reset successfully." });
 });
 
-// Start the server
+// Server setup
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
