@@ -14,15 +14,18 @@ dotenv.config();
 const app = express();
 
 // Configure CORS
-const corsOptions = {
-  origin: [
-    "https://chatddk-frontend.onrender.com",
-    "https://www.davidkooi.com",
-    "https://davidkooi.com"
-  ], // Add your frontend URL here
-  methods: ["GET", "POST"], // HTTP methods your app supports
-};
-app.use(cors(corsOptions)); // Enable CORS with options
+app.use(cors()); // allow all origins temporarily for testing
+app.use(express.json());
+
+//const corsOptions = {
+//  origin: [
+//    "https://chatddk-frontend.onrender.com",
+//    "https://www.davidkooi.com",
+//    "https://davidkooi.com"
+//  ], // Add your frontend URL here
+//  methods: ["GET", "POST"], // HTTP methods your app supports
+//};
+// app.use(cors(corsOptions)); // Enable CORS with options
 
 app.use(bodyParser.json());
 
@@ -75,23 +78,45 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// Chat endpoint
+// Chat endpoint with dynamic WisdomAI personas
 app.post("/chat", async (req, res) => {
   try {
-    const { message } = req.body;
+    const { message, wisdomFigure } = req.body;
 
     if (!message || typeof message !== "string") {
       return res.status(400).json({ error: "Invalid or missing 'message' in request body." });
     }
 
+    // Find relevant files from your existing embeddings logic
     const relevantFiles = await findRelevantFiles(message, openai);
-
     const context = relevantFiles.map((file) => file.content).join("\n");
 
-    const systemMessage = `You are ChatDDK, a chatbot version of David Kooi. 
-    Use the following knowledge base to answer questions:\n${context}
-    ...`; // Truncated system message for readability
+    // Define dynamic system prompts per wisdom figure
+    const personaPrompts = {
+      Buddha: `You are Buddha. Answer thoughtfully, compassionately, emphasizing mindfulness, compassion, and impermanence. Use this context:\n${context}`,
+      
+      Jesus: `You are Jesus. Answer wisely, kindly, and compassionately, offering spiritual and moral guidance. Speak in parables if helpful. Context:\n${context}`,
+      
+      Epictetus: `You are Epictetus, the Stoic philosopher. Answer clearly and directly, emphasizing rationality, virtue, and inner peace. Context:\n${context}`,
+      
+      Vonnegut: `You are Kurt Vonnegut. Answer with dry humor, irony, wit, and a slightly satirical viewpoint. Context:\n${context}`,
+      
+      Laozi: `You are Laozi, the Daoist sage. Answer poetically and metaphorically, emphasizing harmony, balance, and simplicity of the Dao. Context:\n${context}`,
+      
+      Rumi: `You are Rumi. Answer with poetic wisdom, passion, and deep spiritual insight. Context:\n${context}`,
+      
+      Sagan: `You are Carl Sagan. Answer scientifically, insightfully, with a sense of wonder and clarity. Context:\n${context}`,
+      
+      Twain: `You are Mark Twain. Answer humorously, cleverly, with a sharp wit and skeptical eye. Context:\n${context}`,
 
+      Kooi: `You are David Kooi. Answer mindfully, blending scientific curiosity, Daoist wisdom, and dry humor. Emphasize compassion, authenticity, and harmony with nature, while gently poking fun at life's absurdities. Context:\n${context}`
+
+    };
+
+    // Set default if none selected or unknown persona
+    const systemMessage = personaPrompts[wisdomFigure] || `You are a wise assistant. Answer thoughtfully using this context:\n${context}`;
+
+    // Keep the conversation history logic (if desired)
     conversationHistory.push({ role: "user", content: message });
 
     const response = await openai.chat.completions.create({
@@ -106,11 +131,13 @@ app.post("/chat", async (req, res) => {
     conversationHistory.push({ role: "assistant", content: botReply });
 
     res.json({ reply: botReply });
+
   } catch (error) {
     console.error("Error in /chat endpoint:", error.message);
     res.status(500).send("Error communicating with OpenAI API.");
   }
 });
+
 
 // Endpoint to clear the conversation history
 app.post("/reset", (req, res) => {
