@@ -13,6 +13,7 @@ import { protect } from '../middleware/auth.js';
 import { checkQueryLimit } from '../middleware/auth.js';
 import User from '../models/User.js';
 import { findRelevantFiles } from '../utils/knowledge.js';
+import ChatHistory from '../models/ChatHistory.js';
 
 const router = express.Router();
 
@@ -196,6 +197,87 @@ router.post('/reset', [
   } catch (error) {
     console.error("Reset error:", error);
     res.status(500).json({ error: "Error resetting chat history" });
+  }
+});
+
+// Get chat history
+router.get('/history', protect, async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const chatHistory = await ChatHistory.find({ user: userId })
+      .sort({ updatedAt: -1 })
+      .select('title lastMessage updatedAt');
+    res.json(chatHistory);
+  } catch (error) {
+    console.error('Error fetching chat history:', error);
+    res.status(500).json({ error: 'Failed to fetch chat history' });
+  }
+});
+
+// Get chat messages by ID
+router.get('/:chatId', protect, async (req, res) => {
+  try {
+    const chat = await ChatHistory.findById(req.params.chatId);
+    if (!chat || chat.user.toString() !== req.user._id.toString()) {
+      return res.status(404).json({ error: 'Chat not found' });
+    }
+    res.json(chat);
+  } catch (error) {
+    console.error('Error fetching chat:', error);
+    res.status(500).json({ error: 'Failed to fetch chat' });
+  }
+});
+
+// Save chat message
+router.post('/message', protect, async (req, res) => {
+  try {
+    const { chatId, message, wisdomFigure } = req.body;
+    const userId = req.user._id;
+    
+    let chat;
+    if (chatId) {
+      // Add message to existing chat
+      chat = await ChatHistory.findById(chatId);
+      if (!chat || chat.user.toString() !== userId.toString()) {
+        return res.status(404).json({ error: 'Chat not found' });
+      }
+      chat.messages.push(message);
+      chat.lastMessage = message.content;
+    } else {
+      // Create new chat
+      chat = new ChatHistory({
+        user: userId,
+        title: 'New Chat', // Will be updated by pre-save middleware
+        messages: [message],
+        lastMessage: message.content
+      });
+    }
+    
+    const savedChat = await chat.save();
+    console.log('Chat saved:', {
+      id: savedChat._id,
+      title: savedChat.title,
+      messageCount: savedChat.messages.length
+    });
+    res.json(savedChat);
+  } catch (error) {
+    console.error('Error saving message:', error);
+    res.status(500).json({ error: 'Failed to save message' });
+  }
+});
+
+// Delete chat
+router.delete('/:chatId', protect, async (req, res) => {
+  try {
+    const chat = await ChatHistory.findById(req.params.chatId);
+    if (!chat || chat.user.toString() !== req.user._id.toString()) {
+      return res.status(404).json({ error: 'Chat not found' });
+    }
+    await chat.deleteOne();
+    res.json({ message: 'Chat deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting chat:', error);
+    res.status(500).json({ error: 'Failed to delete chat' });
   }
 });
 

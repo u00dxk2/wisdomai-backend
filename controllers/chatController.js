@@ -6,31 +6,62 @@ const ChatHistory = require('../models/ChatHistory');
  */
 exports.saveMessage = async (req, res) => {
   try {
-    const { chatId, message } = req.body;
+    const { chatId, message, wisdomFigure } = req.body;
+    
+    // Ensure we have a valid user ID
+    if (!req.user || !req.user.id) {
+      console.error('No user ID found in request:', req.user);
+      return res.status(401).json({ message: 'Unauthorized - No user ID found' });
+    }
+    
     const userId = req.user.id;
+    console.log('Processing message save:', { userId, chatId, messageRole: message.role, wisdomFigure });
 
     let chat;
     if (chatId) {
       // Add message to existing chat
-      chat = await ChatHistory.findOne({ _id: chatId, userId });
+      chat = await ChatHistory.findOne({ _id: chatId, user: userId });
       if (!chat) {
+        console.error(`Chat not found for ID ${chatId} and user ${userId}`);
         return res.status(404).json({ message: 'Chat not found' });
       }
+      
+      // If it's an assistant message, ensure it has the wisdom figure
+      if (message.role === 'assistant') {
+        message.figure = wisdomFigure;
+      }
+      
       chat.messages.push(message);
+      chat.lastMessage = message.content;
     } else {
-      // Create new chat
+      // Create new chat with initial title from user message
+      const initialTitle = message.role === 'user' && message.content 
+        ? (message.content.length > 50 ? message.content.substring(0, 50) + '...' : message.content)
+        : 'New Chat';
+
       chat = new ChatHistory({
-        userId,
+        user: userId,
+        title: initialTitle,
         messages: [message],
-        title: message.content.substring(0, 50) + '...' // Use first message as title
+        lastMessage: message.content
       });
     }
 
-    await chat.save();
-    res.json(chat);
+    const savedChat = await chat.save();
+    console.log('Chat saved successfully:', { 
+      chatId: savedChat._id, 
+      messageCount: savedChat.messages.length,
+      title: savedChat.title
+    });
+    res.json(savedChat);
   } catch (error) {
     console.error('Error saving message:', error);
-    res.status(500).json({ message: 'Error saving message' });
+    // Send more detailed error information
+    res.status(500).json({ 
+      message: 'Error saving message',
+      error: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
   }
 };
 
@@ -41,10 +72,23 @@ exports.saveMessage = async (req, res) => {
 exports.getChatHistory = async (req, res) => {
   try {
     const userId = req.user.id;
-    const chats = await ChatHistory.find({ userId })
-      .sort({ lastUpdated: -1 })
-      .select('title lastUpdated summary');
-    res.json(chats);
+    const chats = await ChatHistory.find({ user: userId })
+      .sort({ updatedAt: -1 })
+      .select('title messages lastMessage updatedAt');
+    
+    // Format the response to include relevant information
+    const formattedChats = chats.map(chat => ({
+      _id: chat._id,
+      title: chat.title,
+      lastMessage: chat.lastMessage,
+      updatedAt: chat.updatedAt,
+      // Get the last assistant message's figure, if any
+      lastFigure: chat.messages
+        .filter(msg => msg.role === 'assistant')
+        .slice(-1)[0]?.figure
+    }));
+    
+    res.json(formattedChats);
   } catch (error) {
     console.error('Error fetching chat history:', error);
     res.status(500).json({ message: 'Error fetching chat history' });
@@ -60,7 +104,7 @@ exports.getChatMessages = async (req, res) => {
     const { chatId } = req.params;
     const userId = req.user.id;
 
-    const chat = await ChatHistory.findOne({ _id: chatId, userId });
+    const chat = await ChatHistory.findOne({ _id: chatId, user: userId });
     if (!chat) {
       return res.status(404).json({ message: 'Chat not found' });
     }
@@ -81,7 +125,7 @@ exports.deleteChat = async (req, res) => {
     const { chatId } = req.params;
     const userId = req.user.id;
 
-    const result = await ChatHistory.deleteOne({ _id: chatId, userId });
+    const result = await ChatHistory.deleteOne({ _id: chatId, user: userId });
     if (result.deletedCount === 0) {
       return res.status(404).json({ message: 'Chat not found' });
     }

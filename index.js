@@ -26,6 +26,7 @@ import { chatStreamValidator, resetChatValidator } from './validators/chat.valid
 import { validate } from './middleware/validator.js';
 import swaggerUi from 'swagger-ui-express';
 import specs from './config/swagger.js';
+import healthRoutes from './routes/health.js';
 
 // Load environment variables
 dotenv.config();
@@ -68,7 +69,7 @@ const corsOptions = {
       callback(new Error('Not allowed by CORS'));
     }
   },
-  methods: ['GET', 'POST', 'OPTIONS'],
+  methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-API-Key'],
   credentials: true,
   maxAge: 86400, // 24 hours
@@ -121,30 +122,40 @@ app.use(bodyParser.json());
 /**
  * Rate Limiting Configuration
  * Prevents abuse by limiting the number of requests per IP address.
- * 
- * @type {Function} limiter
- * @property {number} windowMs - Time window for request counting (15 minutes)
- * @property {number} max - Maximum requests per window (30)
+ * Separate limits for chat streaming and regular endpoints.
  */
-const limiter = rateLimit({
+
+// Regular endpoints rate limiter (more lenient)
+const standardLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 30, // Limit each IP to 30 requests per window
-  handler: (req, res) => {
-    res.status(429).json({
-      message: "Slow down, wise seeker! 🧘‍♂️ You've reached your limit—pause, reflect, and return soon.",
-    });
-  },
+  max: 100, // Limit each IP to 100 requests per window
   standardHeaders: true,
   legacyHeaders: false,
+  message: {
+    message: "Too many requests, please try again later."
+  }
 });
 
-// Apply rate-limiter to chat routes
-app.use('/api/chat', limiter);
+// Streaming endpoint rate limiter (more strict)
+const streamLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 30, // Limit each IP to 30 requests per window
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    message: "Slow down, wise seeker! 🧘‍♂️ You've reached your limit—pause, reflect, and return soon."
+  }
+});
+
+// Apply rate limiters to specific routes
+app.use('/api/chat/stream', streamLimiter);
+app.use('/api/chat', standardLimiter);
 
 // Mount route handlers
 app.use('/api/auth', authRoutes);
 app.use('/api/keys', apiKeyRoutes);
-app.use('/api/chat', chatRoutes);
+app.use('/api/v1/chat', chatRoutes);
+app.use('/health', healthRoutes);
 
 /**
  * API Documentation

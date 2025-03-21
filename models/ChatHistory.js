@@ -1,4 +1,4 @@
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
 
 const messageSchema = new mongoose.Schema({
   role: {
@@ -10,6 +10,11 @@ const messageSchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  figure: {
+    type: String,
+    enum: ['Buddha', 'Jesus', 'Epictetus', 'Vonnegut', 'Laozi', 'Rumi', 'Sagan', 'Twain', 'Kooi'],
+    required: function() { return this.role === 'assistant'; }
+  },
   timestamp: {
     type: Date,
     default: Date.now
@@ -17,30 +22,47 @@ const messageSchema = new mongoose.Schema({
 });
 
 const chatHistorySchema = new mongoose.Schema({
-  userId: {
+  user: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     required: true
   },
-  messages: [messageSchema],
   title: {
     type: String,
+    required: true,
     default: 'New Chat'
   },
-  lastUpdated: {
-    type: Date,
-    default: Date.now
-  },
-  summary: {
-    type: String,
-    default: ''
+  messages: [messageSchema],
+  lastMessage: {
+    type: String
   }
-}, { timestamps: true });
+}, { 
+  timestamps: true 
+});
 
-// Update lastUpdated whenever messages are modified
+// Helper function to generate a title from content
+function generateTitle(content) {
+  // Remove any special characters and extra whitespace
+  const cleaned = content.replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim();
+  
+  // Split into words and take first 6 words
+  const words = cleaned.split(' ').slice(0, 6);
+  
+  // If the content is longer than 6 words, add ellipsis
+  const title = words.join(' ') + (cleaned.split(' ').length > 6 ? '...' : '');
+  
+  return title;
+}
+
+// Pre-save middleware to generate title from first user message
 chatHistorySchema.pre('save', function(next) {
-  this.lastUpdated = new Date();
+  if (this.isNew || this.title === 'New Chat') {
+    const firstUserMessage = this.messages.find(msg => msg.role === 'user');
+    if (firstUserMessage) {
+      this.title = generateTitle(firstUserMessage.content);
+    }
+  }
   next();
 });
 
-module.exports = mongoose.model('ChatHistory', chatHistorySchema); 
+export default mongoose.model('ChatHistory', chatHistorySchema); 
