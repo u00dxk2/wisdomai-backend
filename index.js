@@ -139,12 +139,12 @@ const limiter = rateLimit({
 });
 
 // Apply rate-limiter to chat routes
-app.use('/chat', limiter);
+app.use('/api/chat', limiter);
 
 // Mount route handlers
 app.use('/api/auth', authRoutes);
 app.use('/api/keys', apiKeyRoutes);
-app.use('/chat', chatRoutes);
+app.use('/api/chat', chatRoutes);
 
 /**
  * API Documentation
