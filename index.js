@@ -17,6 +17,7 @@ import connectDB from './config/db.js';
 import authRoutes from './routes/auth.js';
 import apiKeyRoutes from './routes/apiKey.js';
 import chatRoutes from './routes/chat.js';
+import healthRoutes from './routes/health.js';
 import { protect, checkQueryLimit } from './middleware/auth.js';
 import { authenticateApiKey } from './middleware/apiAuth.js';
 import User from './models/User.js';
@@ -26,7 +27,6 @@ import { chatStreamValidator, resetChatValidator } from './validators/chat.valid
 import { validate } from './middleware/validator.js';
 import swaggerUi from 'swagger-ui-express';
 import specs from './config/swagger.js';
-import healthRoutes from './routes/health.js';
 
 // Load environment variables
 dotenv.config();
