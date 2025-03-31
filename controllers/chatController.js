@@ -74,13 +74,14 @@ exports.getChatHistory = async (req, res) => {
     const userId = req.user.id;
     const chats = await ChatHistory.find({ user: userId })
       .sort({ updatedAt: -1 })
-      .select('title messages lastMessage updatedAt');
+      .select('title messages lastMessage createdAt updatedAt');
     
     // Format the response to include relevant information
     const formattedChats = chats.map(chat => ({
       _id: chat._id,
       title: chat.title,
       lastMessage: chat.lastMessage,
+      createdAt: chat.createdAt,
       updatedAt: chat.updatedAt,
       // Get the last assistant message's figure, if any
       lastFigure: chat.messages
