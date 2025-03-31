@@ -299,7 +299,7 @@ router.delete('/:chatId', protect, async (req, res) => {
 router.post('/clear', protect, async (req, res) => {
   try {
     const { chatId } = req.body;
-    const userId = req.user.id;
+    const userId = req.user._id;
 
     // Validate required parameters
     if (!chatId) {
