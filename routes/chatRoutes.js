@@ -51,6 +51,35 @@ router.get('/history', auth, chatController.getChatHistory);
 
 /**
  * @swagger
+ * /api/chat/clear:
+ *   post:
+ *     tags: [Chat]
+ *     summary: Clear all messages from a chat
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               chatId:
+ *                 type: string
+ *                 description: ID of the chat to clear
+ *                 required: true
+ *     responses:
+ *       200:
+ *         description: Chat cleared successfully
+ *       400:
+ *         description: Chat ID is required
+ *       404:
+ *         description: Chat not found
+ */
+router.post('/clear', auth, chatController.clearChat);
+
+/**
+ * @swagger
  * /api/chat/{chatId}:
  *   get:
  *     tags: [Chat]
