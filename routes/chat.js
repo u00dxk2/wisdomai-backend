@@ -281,4 +281,48 @@ router.delete('/:chatId', protect, async (req, res) => {
   }
 });
 
+/**
+ * Clear the messages from an existing chat
+ * @route POST /chat/clear
+ * @access Private - Requires JWT token
+ * 
+ * @param {Object} req.body
+ * @param {string} req.body.chatId - ID of the chat to clear
+ * 
+ * @returns {Object} 200 - Chat cleared successfully
+ * @returns {string} message - Success message
+ * 
+ * @throws {Object} 400 - Missing chat ID
+ * @throws {Object} 404 - Chat not found
+ * @throws {Object} 500 - Server error
+ */
+router.post('/clear', protect, async (req, res) => {
+  try {
+    const { chatId } = req.body;
+    const userId = req.user.id;
+
+    // Validate required parameters
+    if (!chatId) {
+      return res.status(400).json({ message: 'Chat ID is required' });
+    }
+
+    // Find the chat
+    const chat = await ChatHistory.findOne({ _id: chatId, user: userId });
+    if (!chat) {
+      return res.status(404).json({ message: 'Chat not found' });
+    }
+
+    // Clear the messages array but keep the chat
+    chat.messages = [];
+    chat.lastMessage = '';
+    await chat.save();
+
+    console.log(`Chat ${chatId} cleared successfully for user ${userId}`);
+    res.json({ message: 'Chat cleared successfully' });
+  } catch (error) {
+    console.error('Error clearing chat:', error);
+    res.status(500).json({ message: 'Error clearing chat' });
+  }
+});
+
 export default router; 
