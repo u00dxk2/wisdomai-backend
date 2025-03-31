@@ -136,4 +136,37 @@ exports.deleteChat = async (req, res) => {
     console.error('Error deleting chat:', error);
     res.status(500).json({ message: 'Error deleting chat' });
   }
+};
+
+/**
+ * Clear the current chat (remove all messages but keep the chat)
+ * @route POST /api/chat/clear
+ */
+exports.clearChat = async (req, res) => {
+  try {
+    const { chatId } = req.body;
+    const userId = req.user.id;
+
+    // Validate required parameters
+    if (!chatId) {
+      return res.status(400).json({ message: 'Chat ID is required' });
+    }
+
+    // Find the chat
+    const chat = await ChatHistory.findOne({ _id: chatId, user: userId });
+    if (!chat) {
+      return res.status(404).json({ message: 'Chat not found' });
+    }
+
+    // Clear the messages array but keep the chat
+    chat.messages = [];
+    chat.lastMessage = '';
+    await chat.save();
+
+    console.log(`Chat ${chatId} cleared successfully for user ${userId}`);
+    res.json({ message: 'Chat cleared successfully' });
+  } catch (error) {
+    console.error('Error clearing chat:', error);
+    res.status(500).json({ message: 'Error clearing chat' });
+  }
 }; 
