@@ -18,6 +18,7 @@ import authRoutes from './routes/auth.js';
 import apiKeyRoutes from './routes/apiKey.js';
 import chatRoutes from './routes/chat.js';
 import healthRoutes from './routes/health.js';
+import userRoutes from './routes/userRoutes.js';
 import { protect, checkQueryLimit } from './middleware/auth.js';
 import { authenticateApiKey } from './middleware/apiAuth.js';
 import User from './models/User.js';
@@ -155,6 +156,7 @@ app.use('/api/chat', standardLimiter);
 app.use('/api/auth', authRoutes);
 app.use('/api/keys', apiKeyRoutes);
 app.use('/api/v1/chat', chatRoutes);
+app.use('/api/users', userRoutes);
 app.use('/health', healthRoutes);
 
 /**

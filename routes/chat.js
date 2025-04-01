@@ -14,6 +14,7 @@ import { checkQueryLimit } from '../middleware/auth.js';
 import User from '../models/User.js';
 import { findRelevantFiles } from '../utils/knowledge.js';
 import ChatHistory from '../models/ChatHistory.js';
+import { getUserMemory, updateUserMemory } from '../utils/memory.js';
 
 const router = express.Router();
 
@@ -111,15 +112,43 @@ router.get('/stream', [
 ], async (req, res) => {
   try {
     const { message, wisdomFigure } = req.query;
+    const userId = req.user._id;
+
+    // Get user's memory
+    const memory = await getUserMemory(userId, message);
+    
+    // Format personal facts for prompt
+    const personalFactsStr = memory.personalFacts
+      .map(fact => fact.content)
+      .join('. ');
+      
+    // Format preferences for prompt
+    const preferencesStr = Array.from(memory.preferences.entries || [])
+      .map(([key, val]) => `${key}: ${val}`)
+      .join(', ');
 
     // Get relevant context from knowledge base
     const relevantFiles = await findRelevantFiles(message, openai);
     const context = relevantFiles.map((file) => file.content).join("\n");
 
-    // Create system message with persona and context
+    // Create system message with persona, context and memory
     const systemMessage = personaPrompts[wisdomFigure] 
-      ? `${personaPrompts[wisdomFigure]} Context:\n${context}`
-      : `You are a wise assistant. Answer thoughtfully. Context:\n${context}`;
+      ? `${personaPrompts[wisdomFigure]} 
+        
+        About the user: ${personalFactsStr}
+        User preferences: ${preferencesStr}
+        Recent conversation context: ${memory.relevantHistory}
+        
+        Context from knowledge base:
+        ${context}`
+      : `You are a wise assistant. Answer thoughtfully. 
+        
+        About the user: ${personalFactsStr}
+        User preferences: ${preferencesStr}
+        Recent conversation context: ${memory.relevantHistory}
+        
+        Context from knowledge base:
+        ${context}`;
 
     // Add user message to history
     conversationHistory.push({ role: "user", content: message });
@@ -147,6 +176,13 @@ router.get('/stream', [
 
     // Add assistant's response to history
     conversationHistory.push({ role: "assistant", content: fullReply });
+    
+    // Update user memory with new conversation
+    await updateUserMemory(userId, {
+      userMessage: message,
+      aiResponse: fullReply,
+      wisdomFigure
+    });
 
     // Update user's daily query count
     const user = await User.findById(req.user._id);
