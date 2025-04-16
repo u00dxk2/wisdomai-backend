@@ -41,6 +41,9 @@ const chatHistorySchema = new mongoose.Schema({
   timestamps: true 
 });
 
+// Create compound index for frequent query patterns
+chatHistorySchema.index({ user: 1, updatedAt: -1 });
+
 // Helper function to generate a title from content
 function generateTitle(content) {
   // Remove any special characters and extra whitespace

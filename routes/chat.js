@@ -272,9 +272,22 @@ router.post('/reset', [
 router.get('/history', protect, async (req, res) => {
   try {
     const userId = req.user._id;
+    
+    // Add optional limit parameter (default 30) and lean() for better performance
+    const limit = parseInt(req.query.limit) || 30;
+    
+    console.log(`Fetching chat history for user ${userId}, limit: ${limit}`);
+    const startTime = Date.now();
+    
     const chatHistory = await ChatHistory.find({ user: userId })
       .sort({ updatedAt: -1 })
-      .select('title lastMessage updatedAt');
+      .limit(limit)
+      .select('title lastMessage updatedAt') // Only select the fields we need
+      .lean(); // Return plain JS objects instead of Mongoose documents for better performance
+    
+    const duration = Date.now() - startTime;
+    console.log(`Chat history fetched in ${duration}ms, returned ${chatHistory.length} items`);
+    
     res.json(chatHistory);
   } catch (error) {
     console.error('Error fetching chat history:', error);
