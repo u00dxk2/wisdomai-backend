@@ -65,11 +65,22 @@ const corsOptions = {
       process.env.FRONTEND_URL,    // Production frontend (from env)
     ].filter(Boolean); // Remove undefined/null values
     
+    // Check exact matches first
     if (allowedOrigins.indexOf(origin) !== -1 || process.env.NODE_ENV === 'development') {
       callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
+      return;
     }
+    
+    // Allow all Vercel preview deployments for this project
+    // These patterns match both the main deployment and preview URLs from Vercel
+    if (origin.match(/https:\/\/wisdomai-frontend[a-zA-Z0-9-]*.vercel.app/) ||
+        origin.match(/https:\/\/wisdomai-frontend-[a-zA-Z0-9-]*.vercel.app/)) {
+      console.log('CORS: Allowing Vercel preview URL:', origin);
+      callback(null, true);
+      return;
+    }
+    
+    callback(new Error('Not allowed by CORS'));
   },
   methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-API-Key'],
