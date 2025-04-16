@@ -110,10 +110,26 @@ router.get('/stream', [
   validate(chatStreamValidator),
   sanitizeChatRequest
 ], async (req, res) => {
+  // --- Logging --- 
+  console.log("[STREAM /stream] Received request:");
+  console.log("  Query:", JSON.stringify(req.query, null, 2));
+  console.log("  User:", req.user ? { id: req.user._id, email: req.user.email } : "null/undefined");
+
+  // --- User Check --- 
+  if (!req.user || !req.user._id) {
+    console.error("[STREAM /stream] Error: req.user not found after protect middleware.");
+    // Although protect should handle this, adding safety net
+    return res.status(401).json({ message: 'Not authorized, user information missing after authentication.' });
+  }
+  
   try {
-    // Extract chatId from the query if available (might be null for new chats)
-    const { message, wisdomFigure, chatId } = req.query; 
+    // Safely extract query parameters
+    const message = req.query.message;
+    const wisdomFigure = req.query.wisdomFigure;
+    const chatId = req.query.chatId; // chatId might be undefined for new chats
     const userId = req.user._id;
+    
+    console.log(`[STREAM /stream] Processing for user ${userId}, chatId: ${chatId || 'new chat'}`);
 
     // Get user's memory, passing chatId for context
     const memory = await getUserMemory(userId, message, chatId); 
