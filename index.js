@@ -358,12 +358,26 @@ app.get("/chat-stream", [
 
   } catch (error) {
     console.error("Streaming error:", error);
+    console.error("Error name:", error.name);
+    console.error("Error message:", error.message);
+    console.error("Error stack:", error.stack);
+    
+    // Check if it's an OpenAI API error
+    if (error.response) {
+      console.error("OpenAI API Error Status:", error.response.status);
+      console.error("OpenAI API Error Data:", error.response.data);
+    }
+    
     // Ensure response is properly closed on error
     if (!res.headersSent) {
         res.writeHead(500, { 'Content-Type': 'application/json' });
     }
     if (!res.writableEnded) {
-        res.end(JSON.stringify({ error: "Error communicating with OpenAI API." }));
+        res.end(JSON.stringify({ 
+          error: "Error communicating with OpenAI API.", 
+          message: error.message,
+          type: error.name 
+        }));
     }
   }
 });

@@ -214,7 +214,22 @@ router.get('/stream', [
 
   } catch (error) {
     console.error("Streaming error:", error);
-    res.status(500).json({ error: "Error communicating with OpenAI API." });
+    console.error("Error name:", error.name);
+    console.error("Error message:", error.message);
+    console.error("Error stack:", error.stack);
+    
+    // Check if it's an OpenAI API error
+    if (error.response) {
+      console.error("OpenAI API Error Status:", error.response.status);
+      console.error("OpenAI API Error Data:", error.response.data);
+    }
+    
+    // Send a more detailed error response
+    res.status(500).json({ 
+      error: "Error communicating with OpenAI API.",
+      message: error.message,
+      type: error.name
+    });
   }
 });
 
