@@ -111,11 +111,12 @@ router.get('/stream', [
   sanitizeChatRequest
 ], async (req, res) => {
   try {
-    const { message, wisdomFigure } = req.query;
+    // Extract chatId from the query if available (might be null for new chats)
+    const { message, wisdomFigure, chatId } = req.query; 
     const userId = req.user._id;
 
-    // Get user's memory
-    const memory = await getUserMemory(userId, message);
+    // Get user's memory, passing chatId for context
+    const memory = await getUserMemory(userId, message, chatId); 
     
     // Format personal facts for prompt
     const personalFactsStr = memory.personalFacts
@@ -269,7 +270,13 @@ router.post('/message', protect, async (req, res) => {
   try {
     const { chatId, message, wisdomFigure } = req.body;
     const userId = req.user._id;
-    
+
+    // Validate the incoming message object structure
+    if (!message || typeof message !== 'object' || !message.role || !message.content) {
+      console.error('Invalid message object received:', message);
+      return res.status(400).json({ error: 'Invalid message format' });
+    }
+
     let chat;
     if (chatId) {
       // Add message to existing chat
@@ -277,6 +284,7 @@ router.post('/message', protect, async (req, res) => {
       if (!chat || chat.user.toString() !== userId.toString()) {
         return res.status(404).json({ error: 'Chat not found' });
       }
+      // Explicitly push the received message object
       chat.messages.push(message);
       chat.lastMessage = message.content;
     } else {
@@ -284,17 +292,16 @@ router.post('/message', protect, async (req, res) => {
       chat = new ChatHistory({
         user: userId,
         title: 'New Chat', // Will be updated by pre-save middleware
+        // Ensure the message object is correctly placed in the array
         messages: [message],
         lastMessage: message.content
       });
     }
-    
+
+    console.log('Attempting to save chat with messages:', JSON.stringify(chat.messages, null, 2));
+
     const savedChat = await chat.save();
-    console.log('Chat saved:', {
-      id: savedChat._id,
-      title: savedChat.title,
-      messageCount: savedChat.messages.length
-    });
+    console.log('Chat saved successfully:', savedChat._id);
     res.json(savedChat);
   } catch (error) {
     console.error('Error saving message:', error);

@@ -28,6 +28,7 @@ import { chatStreamValidator, resetChatValidator } from './validators/chat.valid
 import { validate } from './middleware/validator.js';
 import swaggerUi from 'swagger-ui-express';
 import specs from './config/swagger.js';
+import ChatHistory from './models/ChatHistory.js';
 
 // Load environment variables
 dotenv.config();
@@ -182,7 +183,6 @@ app.get('/health', (req, res) => {
 
 // Knowledge base setup
 const knowledgeDir = process.env.KNOWLEDGE_DIR || "./knowledge";
-const conversationHistory = [];
 
 let knowledgeBase = [];
 try {
@@ -257,8 +257,37 @@ app.get("/chat-stream", [
   sanitizeChatRequest
 ], async (req, res) => {
   try {
-    const { message, wisdomFigure } = req.query;
+    // Get userId from authenticated request (set by 'protect' middleware)
+    const userId = req.user.id;
+    // Get message, wisdomFigure, and optional chatId from query
+    const { message, wisdomFigure, chatId } = req.query;
 
+    // --- Fetch existing messages for the chat thread --- 
+    let chatMessages = [];
+    if (chatId) {
+      console.log(`Fetching history for existing chat: ${chatId} for user: ${userId}`);
+      const chat = await ChatHistory.findOne({ _id: chatId, user: userId }).select('messages');
+      if (chat) {
+        // Map messages to the { role, content } format needed by OpenAI
+        chatMessages = chat.messages.map(msg => ({ role: msg.role, content: msg.content }));
+      } else {
+        console.warn(`Chat not found for id: ${chatId} and user: ${userId}`);
+        // Optionally handle this error more formally
+      }
+    } else {
+      console.log(`No chatId provided, starting new chat history for user: ${userId}`);
+      // For a new chat, the history starts empty
+    }
+
+    // --- Prepare messages for OpenAI --- 
+    // Add the current user message to the history for this request
+    const currentMessage = { role: "user", content: message };
+    const messagesForOpenAI = [
+      ...chatMessages, // Existing messages from the database
+      currentMessage   // The new message from the user
+    ];
+
+    // --- Context from Knowledge Base (existing logic) ---
     const relevantFiles = await findRelevantFiles(message, openai);
     const context = relevantFiles.map((file) => file.content).join("\n");
 
@@ -276,45 +305,60 @@ app.get("/chat-stream", [
 
     const systemMessage = personaPrompts[wisdomFigure] || `You are a wise assistant. Answer thoughtfully. Context:\n${context}`;
 
-    conversationHistory.push({ role: "user", content: message });
+    // --- Call OpenAI API with fetched history --- 
+    // Remove push to global history: conversationHistory.push({ role: "user", content: message });
 
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
 
+    console.log(`Sending ${messagesForOpenAI.length} messages to OpenAI (including current).`);
+
     const stream = await openai.chat.completions.create({
-      model: "gpt-4",
-      messages: [{ role: "system", content: systemMessage }, ...conversationHistory],
+      model: "gpt-4", 
+      // Use the fetched messages + current message
+      messages: [{ role: "system", content: systemMessage }, ...messagesForOpenAI],
       stream: true,
     });
 
+    // --- Stream handling (existing logic) ---
+    // Note: We are NOT saving the assistant message here. 
+    // The frontend now handles saving both user and assistant messages 
+    // using the saveMessage controller *after* the stream completes.
     let fullReply = '';
-
     for await (const chunk of stream) {
       const chunkText = chunk.choices[0]?.delta?.content || '';
       fullReply += chunkText;
       res.write(`data: ${JSON.stringify({ content: chunkText })}\n\n`);
     }
+    
+    // Remove push to global history: conversationHistory.push({ role: "assistant", content: fullReply });
 
-    conversationHistory.push({ role: "assistant", content: fullReply });
-
-    // Update user's daily query count
+    // --- Update user query count (existing logic) ---
     const user = await User.findById(req.user._id);
     if (user) {
       user.dailyQueryCount += 1;
       await user.save();
     }
 
+    // --- Signal stream end (existing logic) ---
     res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
     res.end();
 
   } catch (error) {
     console.error("Streaming error:", error);
-    res.status(500).json({ error: "Error communicating with OpenAI API." });
+    // Ensure response is properly closed on error
+    if (!res.headersSent) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+    }
+    if (!res.writableEnded) {
+        res.end(JSON.stringify({ error: "Error communicating with OpenAI API." }));
+    }
   }
 });
 
-// Endpoint to reset conversation
+// Remove obsolete /reset endpoint
+/*
 app.post("/reset", [
   protect,
   validate(resetChatValidator)
@@ -323,6 +367,7 @@ app.post("/reset", [
   console.log("Conversation history cleared.");
   res.json({ message: "Conversation reset successfully." });
 });
+*/
 
 // Server configuration
 const PORT = process.env.PORT || 5001;

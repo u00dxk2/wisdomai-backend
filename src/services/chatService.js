@@ -62,53 +62,39 @@ export const deleteChat = async (chatId) => {
 };
 
 /**
- * Stream a chat response from a selected wisdom figure
- * @param {string} message - User's message/question
- * @param {string} wisdomFigure - Selected wisdom figure
- * @returns {Promise} Response stream
+ * Sets up an EventSource connection to stream chat responses.
+ * @param {string | null} chatId - Optional ID of the current chat thread.
+ * @param {string} message - User's message/question.
+ * @param {string} wisdomFigure - Selected wisdom figure.
+ * @returns {{ eventSource: EventSource, cleanup: () => void }} - Returns the EventSource instance and a cleanup function.
+ * @throws {Error} If setup fails.
  */
-export const streamChat = async (message, wisdomFigure) => {
-  return new Promise((resolve, reject) => {
-    try {
-      const baseUrl = process.env.REACT_APP_API_URL || 'http://localhost:5001';
-      const token = getAuthToken();
-      const eventSourceUrl = new URL(`${baseUrl}/api/chat-stream`);
-      eventSourceUrl.searchParams.append('message', message);
-      eventSourceUrl.searchParams.append('wisdomFigure', wisdomFigure);
-      eventSourceUrl.searchParams.append('token', token);
-
-      const eventSource = new EventSource(eventSourceUrl);
-      let fullResponse = '';
-
-      eventSource.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          if (data.content) {
-            fullResponse += data.content;
-            // Emit progress
-            if (typeof eventSource.onProgress === 'function') {
-              eventSource.onProgress(fullResponse);
-            }
-          }
-          if (data.done) {
-            eventSource.close();
-            resolve(fullResponse);
-          }
-        } catch (error) {
-          console.error('Error parsing event data:', error);
-          eventSource.close();
-          reject(new Error('Failed to parse response data'));
-        }
-      };
-
-      eventSource.onerror = (error) => {
-        console.error('EventSource failed:', error);
-        eventSource.close();
-        reject(new Error('Failed to establish connection with server'));
-      };
-    } catch (error) {
-      console.error('Error setting up EventSource:', error);
-      reject(error);
+export const sendMessage = (chatId, message, wisdomFigure) => {
+  try {
+    const baseUrl = process.env.REACT_APP_API_URL || 'http://localhost:5001';
+    const token = getAuthToken();
+    const eventSourceUrl = new URL(`${baseUrl}/api/chat-stream`);
+    eventSourceUrl.searchParams.append('message', message);
+    eventSourceUrl.searchParams.append('wisdomFigure', wisdomFigure);
+    if (chatId) {
+      eventSourceUrl.searchParams.append('chatId', chatId);
     }
-  });
+    eventSourceUrl.searchParams.append('token', token); // Auth token
+
+    const eventSource = new EventSource(eventSourceUrl);
+
+    const cleanup = () => {
+      if (eventSource && eventSource.readyState !== EventSource.CLOSED) {
+        console.log('Closing EventSource connection.');
+        eventSource.close();
+      }
+    };
+
+    // Return the eventSource and cleanup function immediately
+    return { eventSource, cleanup };
+
+  } catch (error) {
+    console.error('Error setting up EventSource:', error);
+    throw error; // Re-throw the error to be caught by the caller
+  }
 }; 

@@ -72,23 +72,26 @@ exports.saveMessage = async (req, res) => {
 exports.getChatHistory = async (req, res) => {
   try {
     const userId = req.user.id;
+    // Fetch chats but exclude the potentially large 'messages' array
     const chats = await ChatHistory.find({ user: userId })
       .sort({ updatedAt: -1 })
-      .select('title messages lastMessage createdAt updatedAt');
-    
-    // Format the response to include relevant information
+      // Removed 'messages' from select
+      .select('title lastMessage createdAt updatedAt'); 
+
+    // Simplified mapping - no longer processing the messages array here
     const formattedChats = chats.map(chat => ({
       _id: chat._id,
       title: chat.title,
-      lastMessage: chat.lastMessage,
+      // Use the stored lastMessage for preview (adjust frontend if needed)
+      // We might need to ensure lastMessage is populated correctly/usefully
+      // For now, assume it's good enough for a preview or the frontend will handle it.
+      preview: chat.lastMessage, 
       createdAt: chat.createdAt,
       updatedAt: chat.updatedAt,
-      // Get the last assistant message's figure, if any
-      lastFigure: chat.messages
-        .filter(msg => msg.role === 'assistant')
-        .slice(-1)[0]?.figure
+      // Removed lastFigure calculation
     }));
     
+    console.log(`Fetched ${formattedChats.length} chat history entries for user ${userId}`);
     res.json(formattedChats);
   } catch (error) {
     console.error('Error fetching chat history:', error);

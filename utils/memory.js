@@ -6,55 +6,70 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
+const MAX_HISTORY_FOR_PROMPT = 10; // Max messages from current chat
+const MAX_SUMMARY_AGE_DAYS = 7; // How old can the general summary be?
+
 /**
- * Retrieves memory for a specific user, including personal facts, preferences and relevant conversation history
+ * Retrieves memory for a specific user.
  * @param {string} userId - The user's ID
- * @param {string} currentMessage - The current message from the user (optional)
- * @returns {Object} Memory object with personal facts, preferences, and conversation context
+ * @param {string} currentMessage - The current message from the user (optional, for future relevance filtering)
+ * @param {string} chatId - The ID of the current chat (optional, null for new chats)
+ * @returns {Object} Memory object { personalFacts, preferences, relevantHistory }
  */
-export async function getUserMemory(userId, currentMessage) {
-  // Get or create memory entry for user
-  let memory = await UserMemory.findOne({ user: userId });
-  if (!memory) {
-    memory = new UserMemory({ user: userId });
-    await memory.save();
-  }
-  
-  // Get relevant chat history
-  const recentChats = await ChatHistory.find({ user: userId })
-    .sort({ updatedAt: -1 })
-    .limit(5);
-  
-  // Extract messages
-  const chatHistory = recentChats.flatMap(chat => 
-    chat.messages.map(msg => ({
-      role: msg.role,
-      content: msg.content,
-      timestamp: msg.timestamp
-    }))
-  );
-  
-  // Get relevant subset of history
-  let relevantHistory = '';
-  if (chatHistory.length > 0 && currentMessage) {
-    // Use simple recency if under 20 messages
-    if (chatHistory.length < 20) {
-      relevantHistory = chatHistory
-        .slice(-10)
-        .map(msg => `${msg.role}: ${msg.content}`)
-        .join('\n');
-    } else {
-      // For larger histories, use a summarized version
-      relevantHistory = memory.conversationSummary || '';
+export async function getUserMemory(userId, currentMessage, chatId) {
+  // 1. Get user's general memory (facts, prefs, summary)
+  let userMemory = await UserMemory.findOne({ user: userId });
+  if (!userMemory) {
+    userMemory = { personalFacts: [], preferences: new Map(), conversationSummary: '' };
+  } else {
+    // Convert preferences from plain object back to Map if needed (Mongoose might store it as Object)
+    if (userMemory.preferences && !(userMemory.preferences instanceof Map)) {
+      userMemory.preferences = new Map(Object.entries(userMemory.preferences));
     }
   }
   
+  const personalFacts = userMemory.personalFacts || [];
+  const preferences = userMemory.preferences || new Map();
+  
+  // Check if summary is recent enough
+  let generalSummary = '';
+  if (userMemory.conversationSummary && userMemory.lastUpdated) {
+      const summaryAgeDays = (new Date() - new Date(userMemory.lastUpdated)) / (1000 * 60 * 60 * 24);
+      if (summaryAgeDays <= MAX_SUMMARY_AGE_DAYS) {
+          generalSummary = userMemory.conversationSummary;
+      }
+  }
+
+  // 2. Get specific history for the current chat if chatId is provided
+  let currentChatMessages = [];
+  if (chatId) {
+    const currentChat = await ChatHistory.findOne({ _id: chatId, user: userId });
+    if (currentChat) {
+      // Get the last N messages from this specific chat
+      currentChatMessages = currentChat.messages.slice(-MAX_HISTORY_FOR_PROMPT);
+    }
+  }
+
+  // 3. Combine context for the prompt
+  // Start with the current chat history
+  let relevantHistory = currentChatMessages
+    .map(msg => `${msg.role}: ${msg.content}`)
+    .join('\n');
+
+  // Add the general summary if it exists and is different from current chat
+  if (generalSummary && relevantHistory !== generalSummary) { // Avoid duplication if summary covers current chat
+      relevantHistory = `General summary of past interactions:\n${generalSummary}\n\nCurrent conversation:\n${relevantHistory}`;
+  }
+  
+  // If no specific chat history, just use the summary
+  if (!relevantHistory && generalSummary) {
+       relevantHistory = `General summary of past interactions:\n${generalSummary}`;
+  }
+
   return {
-    personalFacts: memory.personalFacts || [],
-    preferences: memory.preferences || new Map(),
-    conversationSummary: memory.conversationSummary || '',
-    relevantHistory,
-    fullMemory: memory
+    personalFacts, // Array of fact objects { content, source, timestamp }
+    preferences,   // Map
+    relevantHistory // String for prompt injection
   };
 }
 
