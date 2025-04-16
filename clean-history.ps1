@@ -5,7 +5,7 @@ Write-Host "Starting frontend history cleanup process..."
 $env:FILTER_BRANCH_SQUELCH_WARNING = 1
 
 # Remove .env files from all commits
-git filter-branch --force --index-filter "git rm --cached --ignore-unmatch .env .env.production" --prune-empty --tag-name-filter cat -- --all
+git filter-branch --force --index-filter "git rm --cached --ignore-unmatch .env .env.production .env.backup" --prune-empty --tag-name-filter cat -- --all
 
 Write-Host "History cleanup completed!"
 Write-Host "Next steps:"
