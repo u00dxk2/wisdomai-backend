@@ -412,4 +412,26 @@ router.post('/clear', protect, async (req, res) => {
   }
 });
 
+// Update user memory
+router.post('/update-memory', protect, async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const { userMessage, aiResponse, wisdomFigure } = req.body;
+    
+    console.log(`Updating memory for user ${userId}`);
+    
+    // Call the memory update function
+    await updateUserMemory(userId, {
+      userMessage,
+      aiResponse,
+      wisdomFigure
+    });
+    
+    res.json({ success: true, message: 'Memory updated successfully' });
+  } catch (error) {
+    console.error('Error updating user memory:', error);
+    res.status(500).json({ error: 'Failed to update user memory' });
+  }
+});
+
 export default router; 

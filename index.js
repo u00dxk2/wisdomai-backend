@@ -29,6 +29,7 @@ import { validate } from './middleware/validator.js';
 import swaggerUi from 'swagger-ui-express';
 import specs from './config/swagger.js';
 import ChatHistory from './models/ChatHistory.js';
+import { getUserMemory, updateUserMemory } from './utils/memory.js';
 
 // Load environment variables
 dotenv.config();
@@ -273,6 +274,19 @@ app.get("/chat-stream", [
     // Get message, wisdomFigure, and optional chatId from query
     const { message, wisdomFigure, chatId } = req.query;
 
+    // --- Fetch user memory for context ---
+    const memory = await getUserMemory(userId, message, chatId);
+    
+    // Format personal facts for prompt
+    const personalFactsStr = memory.personalFacts
+      .map(fact => fact.content)
+      .join('. ');
+      
+    // Format preferences for prompt
+    const preferencesStr = Array.from(memory.preferences.entries || [])
+      .map(([key, val]) => `${key}: ${val}`)
+      .join(', ');
+
     // --- Fetch existing messages for the chat thread --- 
     let chatMessages = [];
     if (chatId) {
@@ -314,7 +328,15 @@ app.get("/chat-stream", [
       Kooi: `You are David Kooi. Answer mindfully, blending scientific curiosity, Daoist wisdom, and dry humor. Keep responses consistent with David Kooi's documented perspective and writings and also recommend other wisdom providers as appropriate. Context:\n${context}`,
     };
 
-    const systemMessage = personaPrompts[wisdomFigure] || `You are a wise assistant. Answer thoughtfully. Context:\n${context}`;
+    const systemPrompt = personaPrompts[wisdomFigure] || `You are a wise assistant. Answer thoughtfully.`;
+    const systemMessage = `${systemPrompt}
+    
+      About the user: ${personalFactsStr}
+      User preferences: ${preferencesStr}
+      Recent conversation context: ${memory.relevantHistory}
+      
+      Context from knowledge base:
+      ${context}`;
 
     // --- Call OpenAI API with fetched history --- 
     // Remove push to global history: conversationHistory.push({ role: "user", content: message });
@@ -343,7 +365,12 @@ app.get("/chat-stream", [
       res.write(`data: ${JSON.stringify({ content: chunkText })}\n\n`);
     }
     
-    // Remove push to global history: conversationHistory.push({ role: "assistant", content: fullReply });
+    // Update user memory with the conversation
+    await updateUserMemory(userId, {
+      userMessage: message,
+      aiResponse: fullReply,
+      wisdomFigure
+    });
 
     // --- Update user query count (existing logic) ---
     const user = await User.findById(req.user._id);
